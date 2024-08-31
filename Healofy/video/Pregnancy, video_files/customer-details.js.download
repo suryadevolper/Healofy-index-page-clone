@@ -1,0 +1,346 @@
+const API_URL = `https://wmt7gctnoc.execute-api.us-east-2.amazonaws.com/default/ShopifyAppProxy?type=coupon_code&phone=`;
+
+// const BOB_STORE_IDENTIFIER_URL = 'https://not-marvin.myshopify.com/'; // TODO: change this to the actual website URL
+
+var isAPICallInProgress = false;
+var openPopup, closePopup; // global functions - to handle popup behaviour
+
+
+document.addEventListener('DOMContentLoaded', function () {
+
+  const makeAnalyticsCall = (eventName, phone) => {
+    try {
+      Shopify.analytics.publish('bob_analytics_event', {
+        eventName,
+        phone: phone ?? undefined
+      });
+    } catch (error) {
+      console.log('Shopify analytics not found');
+    }
+  };
+
+  const body = document.querySelector('body');
+  const bobPopup = document.querySelector('.bob-popup');
+
+  const bobPopupButton = document.querySelector('.bob-popup-button');
+
+  const inputElementRef = document.getElementById('bob-phone-input');
+  closePopup = () => {
+    // call analytics
+    makeAnalyticsCall('POP_UP_CLOSE');
+
+    if (inputElementRef) {
+      // would be undefined if the popup configuration is not set
+      inputElementRef.value = '';
+    }
+    bobPopup.classList.remove('is-open');
+  };
+  closePopupSuccess = () => {
+    // call analytics
+    makeAnalyticsCall('POP_UP_FILLED_CLOSED');
+
+    if (inputElementRef) {
+      // would be undefined if the popup configuration is not set
+      inputElementRef.value = '';
+    }
+    bobPopup.classList.remove('is-open');
+  };
+
+  const continueShoppingButton = document.getElementById('bob-continue-button');
+  if (continueShoppingButton) {
+    // would be undefined if the popup configuration is not set
+    continueShoppingButton.addEventListener('click', closePopupSuccess);
+  }
+
+  const couponCodeElementRef = document.getElementById(
+    'bob-generated-coupon-code'
+  );
+  const copyToClipboardButton = document.getElementById('bob-copy-button');
+  if (copyToClipboardButton) {
+    // would be undefined if the popup configuration is not set
+    copyToClipboardButton.addEventListener('click', () =>
+      copyToClipboard(couponCodeElementRef.innerHTML)
+    );
+  }
+
+  function showError(message) {
+    const errorMessage = document.createElement('div');
+    // button.style.visibility = 'hidden';
+    errorMessage.innerHTML = message;
+    errorMessage.style.margin = '4px 0px';
+    errorMessage.style.fontSize = '14.4px';
+    errorMessage.style.color = 'red';
+    const inputParentElementRef = document.getElementById('bob-popup-input-parent');
+    if(inputParentElementRef){
+      inputParentElementRef.appendChild(errorMessage);
+      setTimeout(() => {
+        inputParentElementRef.removeChild(errorMessage);
+      }, 2000);
+    }
+  }
+
+  function submitNumber(number) {
+    makeAnalyticsCall('POP_UP_FILLED', number )
+    const spinner = document.getElementById('bob-progress-spinner');
+    if (isAPICallInProgress) {
+      return;
+    }
+    isAPICallInProgress = true;
+    spinner.style.visibility = 'visible';
+    fetch(
+      API_URL +
+        number +
+        '&' +
+        new URLSearchParams({
+          client_id: BOB_STORE_IDENTIFIER_URL,
+        })
+    )
+      .then((data) => {
+        return data.json();
+      })
+      .then((data) => {
+        isAPICallInProgress = false;
+        let currentSession = getBobUser();
+        if(
+          currentSession === 'false' ||
+          currentSession === 'undefined' ||
+          currentSession === 'null' ||
+          currentSession === 'true'
+        ) {
+          currentSession = undefined;
+        }
+        spinner.style.visibility = 'hidden';
+        if (data.message === 'Invalid phone number') {
+          showError('Invalid phone number');
+          // window.sessionStorage.setItem('bob_user_identifier', 'false');
+          // setBobUser('false');
+        } else if (data.message && data.message.code === 'ER_DUP_ENTRY') {
+          // emitIdentifyEvent(number);
+          identifyBOBUser(number, currentSession).then(
+            response => {
+              if(response.bob_id){
+                setBobUser(response.bob_id);
+              }
+            }
+          )
+          showError('You have already generated a coupon using this number');
+        } else if (data.message == 'Contact details saved') {
+          // emitIdentifyEvent(number);
+          identifyBOBUser(number, currentSession).then(
+            response => {
+              if(response.bob_id){
+                setBobUser(response.bob_id);
+              }
+            }
+          )
+
+          // couponCodeElementRef.innerHTML = data.code; // using saved coupon code
+
+          // hide page 1, show page 2
+          const page1 = document.getElementById('bob-popup-welcome-page');
+          const page2 = document.getElementById('bob-popup-success-page');
+
+          page1.style.display = 'none';
+          page2.style.display = 'flex';
+        } else {
+          closePopup();
+        }
+      })
+      .catch((error) => {
+        isAPICallInProgress = false;
+        progress = false;
+        spinner.style.visibility = 'hidden';
+        showError('Something went wrong');
+        closePopup();
+      });
+    // closePopup();
+  }
+  const closeButton = document.getElementById('bob-popup-close-button');
+  if (closeButton) {
+    // would be undefined if the popup configuration is not set
+    closeButton.addEventListener('click', closePopup);
+  }
+
+  if (inputElementRef) {
+    // would be undefined if the popup configuration is not set
+    inputElementRef.addEventListener('keypress', (e) => {
+      // check if key pressed is enter
+      if (e.key === 'Enter') {
+        // check if input is a valid phone number
+        if (inputElementRef.value.length !== 10) {
+          showError('Invalid phone number');
+          return;
+        }
+
+        submitNumber(inputElementRef.value);
+      }
+    });
+  }
+
+  const submitButton = document.getElementById('bob-phone-submit-button');
+  if (submitButton) {
+    // would be undefined if the popup configuration is not set
+    submitButton.addEventListener('click', () => {
+      if (inputElementRef.value.length !== 10) {
+        showError('Invalid phone number');
+        return;
+      }
+
+      submitNumber(inputElementRef.value);
+    });
+  }
+
+  openPopup = () => {
+    bobPopup.classList.add('is-open');
+    makeAnalyticsCall('POP_UP_SHOWN');
+    // body.style.overflow = 'hidden';
+  };
+});
+
+/**
+ * @deprecated
+ * Emit an identify event to Shopify analytics
+ * NOTE: to be used by Shopify custom webpixel handler
+ *
+ * @param {string} phone - valid phone number of the user
+ */
+function emitIdentifyEvent(phone) {
+  if (phone) {
+    try {
+      Shopify.analytics.publish('bob_custom_customer_identify', {
+        phone,
+        email: undefined,
+      });
+    } catch (error) {
+      console.log('Shopify analytics not found');
+    }
+  }
+}
+
+
+/**
+ * Save User session id
+ *
+ * @param {string} bob_id 
+ */
+function setBobUser(bob_id) {
+  window.sessionStorage.setItem('bob_user_identifier', bob_id);
+}
+
+/**
+ * Fetch User session id if exists
+ */
+function getBobUser() {
+  return window.sessionStorage.getItem('bob_user_identifier');
+}
+
+/**
+ * Identifies the user and sends the user details to a remote server.
+ * NOTE: atleast one of the phone, email or webPixelId should be provided.
+ *
+ * @param phone - The phone number of the user
+ */
+const identifyBOBUser = (
+  phone,
+  bob_id,
+  // email, NOTE: email to be supported in future
+) => {
+  return new Promise(
+    (resolve, reject) => {
+      const payload = {
+        phone,
+        bob_id: bob_id ? bob_id : undefined,
+        type: 'CUSTOMER_DETAILS_POPUP',
+      }
+
+      try {
+        fetch(
+          'https://shpfy-wbp.getbob.link/webpixel/identify', 
+          {
+          // credentials: 'include',
+          credentials: 'omit',
+          method: 'POST',
+          // headers,
+          body: JSON.stringify(payload),
+          // keepalive: true,
+        }).then((response) => {
+          if (response.ok) {
+            return response.json();
+          }
+          throw new Error('Network response was not ok.');
+        }).then((response) => {
+          resolve(response);
+        }).catch((error) => {
+          reject(error);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    }
+  );
+}
+
+function checkSize() {
+  const popupElementRef = document.getElementById('bob-customer-details-popup');
+  const checkMobile = window.matchMedia('screen and (max-width: 575px)');
+  const checkTablet = window.matchMedia(
+    'screen and (min-width: 576px) and (max-width: 1200px)'
+  );
+  const checkDesktop = window.matchMedia(
+    'screen and (min-width: 1201px) and (max-width: 1700px)'
+  );
+  const checkLargeDesktop = window.matchMedia('screen and (min-width: 1701px)');
+
+  if (checkMobile.matches) {
+    popupElementRef.style.width = '90vw';
+    popupElementRef.style.minHeight = '50vh';
+  } else if (checkTablet.matches) {
+    popupElementRef.style.width = '400px';
+    popupElementRef.style.height = '368px';
+  } else if (checkDesktop.matches) {
+    popupElementRef.style.width = '320px';
+    popupElementRef.style.height = '368px';
+  } else if (checkLargeDesktop.matches) {
+    popupElementRef.style.width = '338px';
+    popupElementRef.style.height = '368px';
+  }
+
+  checkMobile.addListener(function (e) {
+    if (e.matches) {
+      popupElementRef.style.width = '90vw';
+      popupElementRef.style.minHeight = '50vh';
+    }
+  });
+
+  checkTablet.addListener(function (e) {
+    if (e.matches) {
+      popupElementRef.style.width = '400px';
+      popupElementRef.style.height = '368px';
+    }
+  });
+
+  checkDesktop.addListener(function (e) {
+    if (e.matches) {
+      popupElementRef.style.width = '320px';
+      popupElementRef.style.height = '368px';
+    }
+  });
+
+  checkLargeDesktop.addListener(function (e) {
+    if (e.matches) {
+      popupElementRef.style.width = '338px';
+      popupElementRef.style.height = '368px';
+    }
+  });
+}
+
+function copyToClipboard(value) {
+  navigator.clipboard
+    .writeText(value)
+    .then(() => {
+      console.log('Text copied to clipboard');
+    })
+    .catch((error) => {
+      console.error('Failed to copy text to clipboard:', error);
+    });
+}

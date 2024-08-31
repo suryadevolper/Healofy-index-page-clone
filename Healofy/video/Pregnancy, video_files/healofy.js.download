@@ -1,0 +1,111 @@
+var bobWhatsappLogo = document.createElement("IMG");
+
+bobWhatsappLogo.src = "https://whatsapp-widget.s3.ap-south-1.amazonaws.com/wa-logo-120.png";
+
+bobWhatsappLogo.width = "60";
+
+bobWhatsappLogo.height = "60";
+
+bobWhatsappLogo.style.opacity = "inherit";
+
+const tempPlaceHolder = 'Hi';
+
+var bobUrlWithText = encodeURIComponent(`https://${window.location.hostname}${window.location.pathname}\n\nHi Doctor, I would like to know more on the effectiveness of this product`);
+
+var bobUrlWithoutText = `Hi Doctor, I would like to know more on the effectiveness of this product`;
+
+var bobWhatsappElement = document.createElement('a');
+
+bobWhatsappElement.appendChild(bobWhatsappLogo);
+
+bobWhatsappElement.title = "Chat with us on WhatsApp";
+
+bobWhatsappElement.href = `https://wa.me/919513244427?text=${bobUrlWithText}`;
+
+var bobWhatsappButtonDiv = document.createElement('div');
+
+bobWhatsappButtonDiv.id = 'bob_whatsapp_widget_container';
+
+bobWhatsappButtonDiv.style.zIndex = 100000000;
+
+bobWhatsappButtonDiv.style.position = "fixed";
+
+bobWhatsappButtonDiv.style.bottom = "0px";
+
+bobWhatsappButtonDiv.style.right = "0px";
+
+bobWhatsappButtonDiv.style.padding = "10px";
+
+bobWhatsappButtonDiv.style.opacity = "1.0 !important";
+
+bobWhatsappButtonDiv.appendChild(bobWhatsappElement);
+
+var clientName = "healofy";
+
+document.body.appendChild(bobWhatsappButtonDiv);
+
+bobWhatsappElement.target="_blank"
+
+bobWhatsappElement.onclick = (()=>{
+
+    updateCount('WHATSAPP_REDIRECTION')
+
+});
+
+function updateCount(eventName){
+
+
+
+            var newPrimaryHashKey = "obj_name:" + generateRowId(4);
+
+            const payload = {
+
+                id: clientName + newPrimaryHashKey,
+
+                clientName: clientName,
+
+                dateTime: new Date().toUTCString(),
+
+                eventName: eventName
+
+            }
+
+            fetch('https://n7ze0y2wwa.execute-api.ap-south-1.amazonaws.com/default/', {
+
+                  method: "POST",
+
+                      headers: {
+
+      'Accept': 'application/json',
+
+      'Content-Type': 'application/json'
+
+    },
+
+                  body: JSON.stringify(payload)
+
+            }).then(data=> data.json()).then(data=>{
+
+            }).catch((error)=>{
+
+            })
+
+}
+
+        
+
+function generateRowId(shardId /* range 0-64 for shard/slot */) {
+
+            var CUSTOMEPOCH = 1300000000000; 
+
+            var ts = new Date().getTime() - CUSTOMEPOCH; // limit to recent
+
+            var randid = Math.floor(Math.random() * 512);
+
+            ts = (ts * 64);   // bit-shift << 6
+
+            ts = ts + shardId;
+
+            return (ts * 512) + randid;
+
+}
